@@ -179,6 +179,28 @@ def _ensure_user(env, spec, companies_by_name):
     for xmlid in spec["groups"]:
         groups |= env.ref(xmlid)
 
+    # Assign payroll stack marker groups based on the user's scope:
+    #   locked to a BA company   -> BA stack only (sees ba_payroll menus)
+    #   locked to HR/SL          -> OCA stack only (sees payroll menus)
+    #   unlocked admin / manager -> both stacks (sees all menus)
+    stack_ba = env.ref(
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
+        raise_if_not_found=False,
+    )
+    stack_oca = env.ref(
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_oca",
+        raise_if_not_found=False,
+    )
+    if stack_ba and stack_oca:
+        lock_name = spec.get("psql_lock")
+        if lock_name == "CompanyBA-1":
+            groups |= stack_ba
+        elif lock_name in ("CompanyHR-1", "CompanyHR-2", "CompanySL-1"):
+            groups |= stack_oca
+        else:
+            # unlocked user — grant both stacks
+            groups |= stack_ba | stack_oca
+
     if not user:
         _logger.info("multi_company_example: creating user %s", spec["login"])
         user = env["res.users"].create({

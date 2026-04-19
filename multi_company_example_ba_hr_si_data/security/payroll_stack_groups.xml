@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Per-user "payroll stack" marker groups.
+
+  Users in group_payroll_stack_ba  see the BA payroll menus (generated ba_payroll).
+  Users in group_payroll_stack_oca see the standard OCA payroll menus.
+  A user may be in both groups — in that case both menu trees show up.
+
+  The hook in hooks.py assigns users automatically based on their
+  psql_company_lock_id:
+    - locked to a BA company   -> group_payroll_stack_ba
+    - locked to HR or SL       -> group_payroll_stack_oca
+    - unlocked admin / manager -> both groups
+-->
+<odoo>
+    <data noupdate="0">
+
+        <!-- A simple invisible category so groups are discoverable in the UI
+             under Settings → Users & Companies → Groups, but not prominent. -->
+        <record id="module_category_payroll_stack" model="ir.module.category">
+            <field name="name">Payroll Stack (demo)</field>
+            <field name="description">Marker groups that control which payroll menu tree (OCA 'payroll' vs generated 'ba_payroll') is visible to each user.</field>
+            <field name="sequence">100</field>
+        </record>
+
+        <record id="group_payroll_stack_oca" model="res.groups">
+            <field name="name">OCA Payroll user (HR / SL)</field>
+            <field name="category_id" ref="module_category_payroll_stack"/>
+            <field name="comment">Sees the standard OCA 'payroll' menu tree.</field>
+        </record>
+
+        <record id="group_payroll_stack_ba" model="res.groups">
+            <field name="name">BA Payroll user (BA)</field>
+            <field name="category_id" ref="module_category_payroll_stack"/>
+            <field name="comment">Sees the generated 'ba_payroll' (Bosnia-scoped) menu tree.</field>
+        </record>
+
+        <!-- Extend OCA payroll top-level menu: require group_payroll_stack_oca. -->
+        <record id="payroll.payroll_menu_root" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_oca'))]"/>
+        </record>
+
+        <!-- Extend BA payroll top-level menu: require group_payroll_stack_ba. -->
+        <record id="ba_payroll.payroll_menu_root" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ba'))]"/>
+        </record>
+
+    </data>
+</odoo>

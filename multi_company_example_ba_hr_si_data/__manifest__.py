@@ -19,7 +19,7 @@ On install creates:
 See README for the manual test plan that exercises the PostgreSQL RLS
 protection on the locked user.
     """,
-    "version": "16.0.1.2.0",
+    "version": "16.0.1.3.0",
     "author": "bring.out doo Sarajevo",
     "website": "https://www.bring.out.ba",
     "category": "Localization",
@@ -33,8 +33,14 @@ protection on the locked user.
         "bringout_l10n_hr_demo",
         "l10n_ba_fbih_data",
         "multi_company_protect_psql_payroll",
+        # Both payroll stacks are required: we install menu-visibility
+        # records that extend top-level menus from each stack.
+        "payroll",
+        "ba_payroll",
     ],
-    "data": [],
+    "data": [
+        "security/payroll_stack_groups.xml",
+    ],
     "post_init_hook": "post_init_hook",
     "uninstall_hook": "uninstall_hook",
     "installable": True,
