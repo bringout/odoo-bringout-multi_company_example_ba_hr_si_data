@@ -30,6 +30,8 @@ SHARED_PRODUCTS = ["Product 01", "Product 02"]
 
 # Demo users — login, name, allowed-company-names, lock-company-name-or-None
 DEMO_USERS = [
+    # Per-country payroll clerks — all locked via psql_company_lock_id.
+    # These are the users that exercise the RLS module.
     {
         "login": "demo.payroll.ba@hodi.ba",
         "name": "Demo Payroll Clerk (Bosnia)",
@@ -38,6 +40,23 @@ DEMO_USERS = [
         "psql_lock": "CompanyBA-1",
         "groups": ["hr.group_hr_user"],
     },
+    {
+        "login": "demo.payroll.hr@hodi.ba",
+        "name": "Demo Payroll Clerk (Croatia)",
+        "allowed_companies": ["CompanyHR-1"],
+        "default_company": "CompanyHR-1",
+        "psql_lock": "CompanyHR-1",
+        "groups": ["hr.group_hr_user"],
+    },
+    {
+        "login": "demo.payroll.si@hodi.ba",
+        "name": "Demo Payroll Clerk (Slovenia)",
+        "allowed_companies": ["CompanySL-1"],
+        "default_company": "CompanySL-1",
+        "psql_lock": "CompanySL-1",
+        "groups": ["hr.group_hr_user"],
+    },
+    # Unlocked users — normal multi-company access, no RLS enforcement.
     {
         "login": "demo.manager.hr@hodi.ba",
         "name": "Demo HR Manager (Croatia)",
