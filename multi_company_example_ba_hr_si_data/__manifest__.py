@@ -19,7 +19,7 @@ On install creates:
 See README for the manual test plan that exercises the PostgreSQL RLS
 protection on the locked user.
     """,
-    "version": "16.0.1.0.0",
+    "version": "16.0.1.1.0",
     "author": "bring.out doo Sarajevo",
     "website": "https://www.bring.out.ba",
     "category": "Localization",

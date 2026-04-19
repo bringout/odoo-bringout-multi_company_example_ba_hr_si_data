@@ -59,6 +59,30 @@ DEMO_USERS = [
 DEMO_PASSWORD = "demo1234"  # dev only
 
 
+# Demo employees per company — populates hr_employee so the RLS filter
+# has something visible to filter. Also exercises hr_contract / hr_leave
+# downstream when those modules are installed.
+DEMO_EMPLOYEES = {
+    "CompanySL-1": [
+        ("Janez Novak",      "janez.novak@example.si",      "Direktor"),
+        ("Ana Kovač",        "ana.kovac@example.si",         "Računovođa"),
+    ],
+    "CompanyHR-1": [
+        ("Ivan Horvat",      "ivan.horvat@example.hr",       "Direktor"),
+        ("Marija Kovačić",   "marija.kovacic@example.hr",    "Prodaja"),
+    ],
+    "CompanyHR-2": [
+        ("Tomislav Babić",   "tomislav.babic@example.hr",    "Direktor"),
+        ("Petra Marić",      "petra.maric@example.hr",       "Logistika"),
+    ],
+    "CompanyBA-1": [
+        ("Emir Hodžić",      "emir.hodzic@example.ba",       "Direktor"),
+        ("Amina Bašić",      "amina.basic@example.ba",       "Računovodstvo"),
+        ("Mirza Delić",      "mirza.delic@example.ba",       "Prodaja"),
+    ],
+}
+
+
 # --- Helpers ---------------------------------------------------------------
 
 
@@ -163,6 +187,39 @@ def _ensure_user(env, spec, companies_by_name):
     return user
 
 
+def _ensure_demo_employees(env, companies_by_name):
+    """Create demo employees per company. Idempotent: matches by
+    (name, company_id). Skips silently if the `hr` module isn't loaded
+    yet — which shouldn't happen since this module depends on hr.
+    """
+    employee_obj = env["hr.employee"]
+    for company_name, roster in DEMO_EMPLOYEES.items():
+        company = companies_by_name.get(company_name)
+        if not company:
+            _logger.warning(
+                "multi_company_example: company %s not found; "
+                "skipping employee creation", company_name,
+            )
+            continue
+        for name, work_email, job_title in roster:
+            existing = employee_obj.search([
+                ("name", "=", name),
+                ("company_id", "=", company.id),
+            ], limit=1)
+            if existing:
+                continue
+            _logger.info(
+                "multi_company_example: creating employee %s at %s",
+                name, company_name,
+            )
+            employee_obj.create({
+                "name": name,
+                "work_email": work_email,
+                "job_title": job_title,
+                "company_id": company.id,
+            })
+
+
 # --- Entry points ----------------------------------------------------------
 
 
@@ -189,6 +246,10 @@ def post_init_hook(cr, registry):
     # 4. Demo users with PSQL lock on the Bosnia payroll clerk.
     for spec in DEMO_USERS:
         _ensure_user(env, spec, companies_by_name)
+
+    # 5. Demo employees per company (gives the RLS filter something
+    #    visible to filter — otherwise all hr_employee lists are empty).
+    _ensure_demo_employees(env, companies_by_name)
 
     _logger.info("multi_company_example: setup complete")
 

@@ -1,6 +1,6 @@
 [project]
 name = "odoo-bringout-multi_company_example_ba_hr_si_data"
-version = "16.0.1.0.0"
+version = "16.0.1.1.0"
 description = "Multi-company demo data: BA / HR x2 / SI companies, shared products, payroll clerk RLS example"
 authors = [
     { name = "Ernad Husremovic", email = "hernad@bring.out.ba" }
