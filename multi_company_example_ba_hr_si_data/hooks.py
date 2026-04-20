@@ -28,6 +28,36 @@ BA_CHART_NAME_HINT = "FBiH"  # substring match against account.chart.template.na
 
 SHARED_PRODUCTS = ["Product 01", "Product 02"]
 
+# Per-country VAT rate on the sale side. Used both to wire the correct
+# account.tax onto the shared products' taxes_id (so SO lines pick up the
+# right VAT when the order runs under a given company) and to pick the
+# tax amount when creating the pricelist items below.
+SALE_VAT_RATE = {
+    "CompanyBA-1": 17.0,  # PDV 17%
+    "CompanyHR-1": 25.0,  # HR PDV 25%
+    "CompanyHR-2": 25.0,
+    "CompanySL-1": 22.0,  # SI DDV 22%
+}
+
+# Per-company list price (ex-VAT) for each shared product, in the
+# company's own currency. User-specified illustrative conversion:
+# "if in Croatia it's 100 EUR, in Bosnia it's 170 KM" — not the official
+# 1 EUR = 1.95583 BAM peg, but a round, readable demo ratio.
+PRODUCT_PRICES = {
+    "Product 01": {
+        "CompanyBA-1": 170.0,  # BAM
+        "CompanyHR-1": 100.0,  # EUR
+        "CompanyHR-2": 100.0,
+        "CompanySL-1": 105.0,  # EUR — slightly higher than Croatia by user choice
+    },
+    "Product 02": {
+        "CompanyBA-1": 340.0,
+        "CompanyHR-1": 200.0,
+        "CompanyHR-2": 200.0,
+        "CompanySL-1": 210.0,
+    },
+}
+
 # Demo users — login, name, allowed-company-names, lock-company-name-or-None
 DEMO_USERS = [
     # Per-country payroll clerks — all locked via psql_company_lock_id.
@@ -78,9 +108,6 @@ DEMO_USERS = [
 DEMO_PASSWORD = "demo1234"  # dev only
 
 
-# Demo employees per company — populates hr_employee so the RLS filter
-# has something visible to filter. Also exercises hr_contract / hr_leave
-# downstream when those modules are installed.
 # Demo customers — one per country. Each row carries country-appropriate
 # tax/registry numbers so the sale and invoicing flows that read these
 # fields (e.g. Bosnian fiscalization, Croatian OIB validation) have
@@ -113,6 +140,9 @@ DEMO_CUSTOMERS = [
 ]
 
 
+# Demo employees per company — populates hr_employee so the RLS filter
+# has something visible to filter. Also exercises hr_contract / hr_leave
+# downstream when those modules are installed.
 DEMO_EMPLOYEES = {
     "CompanySL-1": [
         ("Janez Novak",      "janez.novak@example.si",      "Direktor"),
@@ -184,20 +214,171 @@ def _load_chart(env, company, template):
     template.with_company(company).try_loading(company=company, install_demo=False)
 
 
-def _ensure_shared_products(env):
+def _find_sale_tax(env, company, rate):
+    """Locate the sale-side VAT tax at ``rate`` percent for ``company``.
+
+    HR / SI chart templates instantiate per-company taxes automatically;
+    BA's l10n_ba_data defines plain ``account.tax`` records (no
+    ``account.tax.template``) which end up owned by whichever company
+    was active at install time (typically the main company). When no
+    tax exists on the target company, this function copies a matching
+    record into it so SO lines running under that company have the
+    expected rate available.
+    """
+    tax = env["account.tax"].search([
+        ("company_id", "=", company.id),
+        ("type_tax_use", "=", "sale"),
+        ("amount", "=", rate),
+        ("amount_type", "=", "percent"),
+    ], limit=1)
+    if tax:
+        return tax
+    template = env["account.tax"].search([
+        ("type_tax_use", "=", "sale"),
+        ("amount", "=", rate),
+        ("amount_type", "=", "percent"),
+    ], limit=1)
+    if not template:
+        return tax  # empty recordset
+    _logger.info(
+        "multi_company_example: no %.1f%% sale tax on %s — copying from %s",
+        rate, company.name, template.company_id.name or "<global>",
+    )
+    return env["account.tax"].create({
+        "name": template.name,
+        "description": template.description,
+        "amount": template.amount,
+        "amount_type": template.amount_type,
+        "type_tax_use": template.type_tax_use,
+        "country_id": template.country_id.id,
+        "company_id": company.id,
+    })
+
+
+def _ensure_shared_products(env, companies_by_name):
     product_obj = env["product.product"]
+    # Gather sale-side VAT for every company that has a rate declared.
+    taxes = env["account.tax"]
+    for company_name, rate in SALE_VAT_RATE.items():
+        company = companies_by_name.get(company_name)
+        if not company:
+            continue
+        tax = _find_sale_tax(env, company, rate)
+        if not tax:
+            _logger.warning(
+                "multi_company_example: no %.1f%% sale tax found for %s — "
+                "CoA may not be loaded yet; shared-product tax wiring skipped",
+                rate, company_name,
+            )
+            continue
+        taxes |= tax
     for name in SHARED_PRODUCTS:
         existing = product_obj.search([("name", "=", name)], limit=1)
         if existing:
+            # Refresh taxes on an already-created product so upgrades
+            # pick up new companies / new tax rules without losing the
+            # rest of the record.
+            if taxes:
+                existing.write({"taxes_id": [(6, 0, taxes.ids)]})
             continue
         _logger.info("multi_company_example: creating shared product %s", name)
-        product_obj.create({
+        vals = {
             "name": name,
             "type": "consu",
             "sale_ok": True,
             "purchase_ok": True,
             "company_id": False,  # shared across all companies
-            "list_price": 100.0,
+            "list_price": 100.0,   # overridden per company by pricelists
+        }
+        if taxes:
+            vals["taxes_id"] = [(6, 0, taxes.ids)]
+        product_obj.create(vals)
+
+
+def _ensure_pricelists(env, companies_by_name):
+    """One pricelist per company, priced in the company's own currency.
+
+    Each pricelist carries fixed-price items for every shared product
+    mapped in PRODUCT_PRICES. The company's currency is authoritative —
+    we don't attempt conversion. Idempotent: matches pricelists by
+    (name, company_id), and pricelist items by (pricelist, product).
+    """
+    pricelist_obj = env["product.pricelist"]
+    item_obj = env["product.pricelist.item"]
+    product_obj = env["product.product"]
+    results = {}
+    for company_name, company in companies_by_name.items():
+        pl_name = f"Pricelist {company_name}"
+        pl = pricelist_obj.search([
+            ("name", "=", pl_name),
+            ("company_id", "=", company.id),
+        ], limit=1)
+        if not pl:
+            _logger.info(
+                "multi_company_example: creating pricelist %s (%s)",
+                pl_name, company.currency_id.name,
+            )
+            pl = pricelist_obj.create({
+                "name": pl_name,
+                "currency_id": company.currency_id.id,
+                "company_id": company.id,
+            })
+        results[company_name] = pl
+        for product_name, by_company in PRODUCT_PRICES.items():
+            price = by_company.get(company_name)
+            if price is None:
+                continue
+            product = product_obj.search([
+                ("name", "=", product_name),
+            ], limit=1)
+            if not product:
+                continue
+            existing_item = item_obj.search([
+                ("pricelist_id", "=", pl.id),
+                ("product_tmpl_id", "=", product.product_tmpl_id.id),
+            ], limit=1)
+            item_vals = {
+                "pricelist_id": pl.id,
+                "applied_on": "1_product",
+                "product_tmpl_id": product.product_tmpl_id.id,
+                "compute_price": "fixed",
+                "fixed_price": price,
+            }
+            if existing_item:
+                existing_item.write({
+                    "compute_price": "fixed",
+                    "fixed_price": price,
+                })
+            else:
+                item_obj.create(item_vals)
+    return results
+
+
+def _assign_pricelists_to_customers(env, companies_by_name, pricelists_by_company):
+    """Wire each demo customer's ``property_product_pricelist`` to its
+    company's pricelist, so creating a sale order for Test X Kupac picks
+    the right currency + price without manual selection.
+
+    Note: ``property_product_pricelist`` is company-dependent; we set it
+    under the target company's context so the value lands on the right
+    company slice of ir.property.
+    """
+    partner_obj = env["res.partner"]
+    for spec in DEMO_CUSTOMERS:
+        company = companies_by_name.get(spec["company_name"])
+        if not company:
+            continue
+        pl = pricelists_by_company.get(spec["company_name"])
+        if not pl:
+            continue
+        partner = partner_obj.search([
+            ("name", "=", spec["name"]),
+            ("company_id", "=", company.id),
+        ], limit=1)
+        if not partner:
+            continue
+        partner.with_company(company).write({
+            "property_product_pricelist": pl.id,
         })
 
 
@@ -364,8 +545,8 @@ def post_init_hook(cr, registry):
             template = _resolve_ba_chart_template(env)
         _load_chart(env, company, template)
 
-    # 3. Shared products.
-    _ensure_shared_products(env)
+    # 3. Shared products — with per-country sale VAT wired onto taxes_id.
+    _ensure_shared_products(env, companies_by_name)
 
     # 4. Demo users with PSQL lock on the Bosnia payroll clerk.
     for spec in DEMO_USERS:
@@ -378,6 +559,10 @@ def post_init_hook(cr, registry):
     # 6. Demo customers per company (one per country, with local tax /
     #    registry numbers for use in sale / invoice flows).
     _ensure_demo_customers(env, companies_by_name)
+
+    # 7. Per-company pricelists + customer pricelist assignment.
+    pricelists_by_company = _ensure_pricelists(env, companies_by_name)
+    _assign_pricelists_to_customers(env, companies_by_name, pricelists_by_company)
 
     _logger.info("multi_company_example: setup complete")
 
