@@ -81,6 +81,38 @@ DEMO_PASSWORD = "demo1234"  # dev only
 # Demo employees per company — populates hr_employee so the RLS filter
 # has something visible to filter. Also exercises hr_contract / hr_leave
 # downstream when those modules are installed.
+# Demo customers — one per country. Each row carries country-appropriate
+# tax/registry numbers so the sale and invoicing flows that read these
+# fields (e.g. Bosnian fiscalization, Croatian OIB validation) have
+# non-empty plausible data to work with.
+#   BA: company_registry = JIB (13 digits), vat = ID PDV (12 digits)
+#   HR: OIB (11 digits) serves as both; vat carries the "HR" prefix
+#   SI: matična številka (7 digits) as registry; vat = "SI" + 8 digits
+DEMO_CUSTOMERS = [
+    {
+        "company_name": "CompanyBA-1",
+        "name": "Test Bosnia Kupac",
+        "country_xmlid": "base.ba",
+        "vat": "123456789012",
+        "company_registry": "1234567890123",
+    },
+    {
+        "company_name": "CompanyHR-1",
+        "name": "Test Croatia Kupac",
+        "country_xmlid": "base.hr",
+        "vat": "HR12345678901",
+        "company_registry": "12345678901",
+    },
+    {
+        "company_name": "CompanySL-1",
+        "name": "Test Slovenia Kupac",
+        "country_xmlid": "base.si",
+        "vat": "SI12345678",
+        "company_registry": "1234567",
+    },
+]
+
+
 DEMO_EMPLOYEES = {
     "CompanySL-1": [
         ("Janez Novak",      "janez.novak@example.si",      "Direktor"),
@@ -244,6 +276,41 @@ def _ensure_user(env, spec, companies_by_name):
     return user
 
 
+def _ensure_demo_customers(env, companies_by_name):
+    """Create one test customer per country. Idempotent: matches by
+    (name, company_id). VAT / company_registry values are test fixtures,
+    not real entity numbers.
+    """
+    partner_obj = env["res.partner"]
+    for spec in DEMO_CUSTOMERS:
+        company = companies_by_name.get(spec["company_name"])
+        if not company:
+            _logger.warning(
+                "multi_company_example: company %s not found; "
+                "skipping customer %s", spec["company_name"], spec["name"],
+            )
+            continue
+        existing = partner_obj.search([
+            ("name", "=", spec["name"]),
+            ("company_id", "=", company.id),
+        ], limit=1)
+        if existing:
+            continue
+        _logger.info(
+            "multi_company_example: creating customer %s at %s",
+            spec["name"], spec["company_name"],
+        )
+        partner_obj.create({
+            "name": spec["name"],
+            "country_id": env.ref(spec["country_xmlid"]).id,
+            "vat": spec["vat"],
+            "company_registry": spec["company_registry"],
+            "company_id": company.id,
+            "customer_rank": 1,
+            "is_company": True,
+        })
+
+
 def _ensure_demo_employees(env, companies_by_name):
     """Create demo employees per company. Idempotent: matches by
     (name, company_id). Skips silently if the `hr` module isn't loaded
@@ -308,6 +375,10 @@ def post_init_hook(cr, registry):
     #    visible to filter — otherwise all hr_employee lists are empty).
     _ensure_demo_employees(env, companies_by_name)
 
+    # 6. Demo customers per company (one per country, with local tax /
+    #    registry numbers for use in sale / invoice flows).
+    _ensure_demo_customers(env, companies_by_name)
+
     _logger.info("multi_company_example: setup complete")
 
 
@@ -320,6 +391,19 @@ def uninstall_hook(cr, registry):
     if users:
         _logger.info("multi_company_example: removing %d demo users", len(users))
         users.unlink()
+
+    # Demo customers — remove only if untouched by transactions.
+    customer_names = [s["name"] for s in DEMO_CUSTOMERS]
+    customers = env["res.partner"].search([("name", "in", customer_names)])
+    for c in customers:
+        try:
+            c.unlink()
+        except Exception:
+            _logger.info(
+                "multi_company_example: cannot remove customer %s (has refs); archiving",
+                c.name,
+            )
+            c.active = False
 
     # Shared products — remove only if untouched by transactions.
     products = env["product.product"].search([("name", "in", SHARED_PRODUCTS)])
