@@ -101,7 +101,14 @@ DEMO_USERS = [
         "allowed_companies": ["CompanySL-1", "CompanyHR-1", "CompanyHR-2", "CompanyBA-1"],
         "default_company": "CompanyBA-1",
         "psql_lock": None,
-        "groups": ["base.group_system"],
+        # group_system grants settings/admin but does NOT imply sale ACLs
+        # (ir.model.access for sale.order requires sales_team groups). Add
+        # the sales manager group so this user can create sale orders in
+        # any of the allowed companies, including HR-1 and HR-2.
+        "groups": [
+            "base.group_system",
+            "sales_team.group_sale_manager",
+        ],
     },
 ]
 
@@ -129,6 +136,13 @@ DEMO_CUSTOMERS = [
         "country_xmlid": "base.hr",
         "vat": "HR12345678901",
         "company_registry": "12345678901",
+    },
+    {
+        "company_name": "CompanyHR-2",
+        "name": "Test Croatia HR2 kupac",
+        "country_xmlid": "base.hr",
+        "vat": "HR98765432109",
+        "company_registry": "98765432109",
     },
     {
         "company_name": "CompanySL-1",
