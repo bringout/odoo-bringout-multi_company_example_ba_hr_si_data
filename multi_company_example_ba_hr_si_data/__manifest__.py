@@ -19,7 +19,7 @@ On install creates:
 See README for the manual test plan that exercises the PostgreSQL RLS
 protection on the locked user.
     """,
-    "version": "16.0.1.3.0",
+    "version": "16.0.1.4.0",
     "author": "bring.out doo Sarajevo",
     "website": "https://www.bring.out.ba",
     "category": "Localization",
@@ -32,7 +32,11 @@ protection on the locked user.
         "bringout_l10n_si_demo",
         "bringout_l10n_hr_demo",
         "l10n_ba_fbih_data",
-        "multi_company_protect_psql_payroll",
+        # NOTE: multi_company_protect_psql_payroll is deliberately NOT in
+        # depends. The example module only *uses* psql_company_lock_id
+        # defensively (guarded by an `if "..." in user._fields` check).
+        # This lets you install/uninstall the RLS module independently to
+        # observe example behavior with vs. without PSQL protection.
         # Both payroll stacks are required: we install menu-visibility
         # records that extend top-level menus from each stack.
         "payroll",

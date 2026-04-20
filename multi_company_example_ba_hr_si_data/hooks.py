@@ -179,10 +179,16 @@ def _ensure_user(env, spec, companies_by_name):
     for xmlid in spec["groups"]:
         groups |= env.ref(xmlid)
 
-    # Assign payroll stack marker groups based on the user's scope:
-    #   locked to a BA company   -> BA stack only (sees ba_payroll menus)
-    #   locked to HR/SL          -> OCA stack only (sees payroll menus)
-    #   unlocked admin / manager -> both stacks (sees all menus)
+    # Assign payroll access + stack marker groups together.
+    # The stack marker alone isn't enough: payroll menu children require the
+    # real access group (payroll.group_payroll_user / ba_payroll.group_payroll_user).
+    # Odoo auto-hides a parent menu when every child is hidden, so without the
+    # access group the whole tree disappears for the user even though the stack
+    # marker is satisfied on the root.
+    #
+    #   locked to BA           -> BA stack marker + ba_payroll.group_payroll_user
+    #   locked to HR/SL        -> OCA stack marker + payroll.group_payroll_user
+    #   unlocked (admin, mgr)  -> both stacks + both access groups
     stack_ba = env.ref(
         "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
         raise_if_not_found=False,
@@ -191,15 +197,25 @@ def _ensure_user(env, spec, companies_by_name):
         "multi_company_example_ba_hr_si_data.group_payroll_stack_oca",
         raise_if_not_found=False,
     )
+    access_ba = env.ref("ba_payroll.group_payroll_user", raise_if_not_found=False)
+    access_oca = env.ref("payroll.group_payroll_user", raise_if_not_found=False)
     if stack_ba and stack_oca:
         lock_name = spec.get("psql_lock")
         if lock_name == "CompanyBA-1":
             groups |= stack_ba
+            if access_ba:
+                groups |= access_ba
         elif lock_name in ("CompanyHR-1", "CompanyHR-2", "CompanySL-1"):
             groups |= stack_oca
+            if access_oca:
+                groups |= access_oca
         else:
-            # unlocked user — grant both stacks
+            # unlocked user — grant both stacks + both access groups
             groups |= stack_ba | stack_oca
+            if access_ba:
+                groups |= access_ba
+            if access_oca:
+                groups |= access_oca
 
     if not user:
         _logger.info("multi_company_example: creating user %s", spec["login"])
