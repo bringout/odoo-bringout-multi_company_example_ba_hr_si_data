@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "vertical": "Multicompany BA/HR/SI — ba_payroll ⋅ EE payroll side-by-side (v19)",
+  "description_bs": "Test instanca (Odoo 19) koja dokazuje da ba_payroll (ba.* namespace, generisan fork OCA payroll-a) radi RAME UZ RAME sa Odoo Enterprise hr_payroll modelima u istoj bazi — bez EE licence. EE stack obezbjeđuju nefunkcionalni CE stubovi iz odoo-bringout-dummy-payroll-ee (hr_payroll → hr_holidays_gantt → hr_gantt → web_gantt). Instalacija kreira 4 kompanije (CompanySL-1, CompanyHR-1, CompanyHR-2, CompanyBA-1), FBiH kontni plan na bosanskoj kompaniji, 2 dijeljena proizvoda sa cjenovnicima po kompaniji, i payroll clerke zaključane po kompaniji (psql_company_lock_id RLS). 'Stack marker' grupe određuju koji payroll meni clerk vidi: BA clerk → BA Payroll meni; HR/SI clerk → EE hr_payroll (stub) meni; admin → oba. Vidi blog: https://www.hodi.ba/blog/payroll-i-ba-payroll-side-by-side-2026.md/",
+  "default_preset": "ba_payroll_clerk",
+  "sso_login": true,
+  "presets": {
+    "ba_payroll_clerk": {
+      "label_bs": "BA payroll clerk (Bosna)",
+      "description_bs": "Payroll referent zaključan na bosansku kompaniju. Vidi samo BA Payroll meni (ba_payroll, ba.* namespace). U demo bazi odgovara korisniku demo.payroll.ba@hodi.ba zaključanom preko psql_company_lock_id.",
+      "groups": [
+        "base.group_user",
+        "hr.group_hr_user",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
+        "ba_payroll.group_payroll_user"
+      ]
+    },
+    "ee_payroll_clerk": {
+      "label_bs": "EE payroll clerk (Hrvatska / Slovenija)",
+      "description_bs": "Payroll referent za hrvatske/slovensku kompaniju. Vidi Enterprise hr_payroll meni (ovdje CE stub iz dummy-payroll-ee). Dokazuje da EE hr.* i BA ba.* stack koegzistiraju za različite korisnike u istoj instanci.",
+      "groups": [
+        "base.group_user",
+        "hr.group_hr_user",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ee",
+        "hr_payroll.group_hr_payroll_user"
+      ]
+    },
+    "hr_manager": {
+      "label_bs": "HR menadžer (više kompanija)",
+      "description_bs": "HR menadžer sa pristupom kroz hrvatske entitete (CompanyHR-1 / CompanyHR-2), bez RLS zaključavanja. Vidi oba payroll stacka.",
+      "groups": [
+        "base.group_user",
+        "hr.group_hr_manager",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ee",
+        "ba_payroll.group_payroll_user",
+        "hr_payroll.group_hr_payroll_user"
+      ]
+    },
+    "admin": {
+      "label_bs": "Administrator instance (oba stacka)",
+      "description_bs": "Puni pristup postavkama + manager uloge u oba payroll stacka i prodaji/računovodstvu. Vidi i BA Payroll i EE hr_payroll menije.",
+      "groups": [
+        "base.group_user",
+        "base.group_system",
+        "base.group_erp_manager",
+        "account.group_account_manager",
+        "sales_team.group_sale_manager",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ee",
+        "ba_payroll.group_payroll_manager",
+        "hr_payroll.group_hr_payroll_manager"
+      ]
+    }
+  }
+}

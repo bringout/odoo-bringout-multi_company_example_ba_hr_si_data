@@ -1,16 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Per-user "payroll stack" marker groups.
+  Per-user "payroll stack" marker groups (Odoo 19 side-by-side variant).
 
-  Users in group_payroll_stack_ba  see the BA payroll menus (generated ba_payroll).
-  Users in group_payroll_stack_oca see the standard OCA payroll menus.
+  Users in group_payroll_stack_ba see the BA payroll menus (generated
+  ba_payroll, ba.* namespace).
+  Users in group_payroll_stack_ee see the Enterprise hr_payroll menus —
+  here supplied by the non-functional CE stubs of
+  odoo-bringout-dummy-payroll-ee (hr.* namespace).
   A user may be in both groups — in that case both menu trees show up.
 
   The hook in hooks.py assigns users automatically based on their
   psql_company_lock_id:
     - locked to a BA company   -> group_payroll_stack_ba
-    - locked to HR or SL       -> group_payroll_stack_oca
+    - locked to HR or SL       -> group_payroll_stack_ee
     - unlocked admin / manager -> both groups
+
+  Menu-gating mechanism: ir.ui.menu.groups_id is "any of", so adding a
+  group to a menu does NOT hide it from users who hold other access
+  groups. Odoo's real gate is the implicit one — a parent menu with ALL
+  children hidden becomes invisible. ba_payroll ships a single clean root
+  (ba_payroll.payroll_menu_root), so one record gates the whole BA tree.
+  The EE hr_payroll *stub* flattens the Enterprise tree into 9 parent-less
+  top-level menus (the Enterprise root menu it parented under was not
+  generated), so the EE marker is applied to each of those 9 roots.
 -->
 <odoo>
     <data noupdate="0">
@@ -19,14 +31,14 @@
              under Settings → Users & Companies → Groups, but not prominent. -->
         <record id="module_category_payroll_stack" model="ir.module.category">
             <field name="name">Payroll Stack (demo)</field>
-            <field name="description">Marker groups that control which payroll menu tree (OCA 'payroll' vs generated 'ba_payroll') is visible to each user.</field>
+            <field name="description">Marker groups that control which payroll menu tree (Enterprise 'hr_payroll' vs generated 'ba_payroll') is visible to each user.</field>
             <field name="sequence">100</field>
         </record>
 
-        <record id="group_payroll_stack_oca" model="res.groups">
-            <field name="name">OCA Payroll user (HR / SL)</field>
+        <record id="group_payroll_stack_ee" model="res.groups">
+            <field name="name">EE Payroll user (HR / SL)</field>
             <field name="category_id" ref="module_category_payroll_stack"/>
-            <field name="comment">Sees the standard OCA 'payroll' menu tree.</field>
+            <field name="comment">Sees the Enterprise 'hr_payroll' menu tree (CE stub from odoo-bringout-dummy-payroll-ee).</field>
         </record>
 
         <record id="group_payroll_stack_ba" model="res.groups">
@@ -35,9 +47,34 @@
             <field name="comment">Sees the generated 'ba_payroll' (Bosnia-scoped) menu tree.</field>
         </record>
 
-        <!-- Extend OCA payroll top-level menu: require group_payroll_stack_oca. -->
-        <record id="payroll.payroll_menu_root" model="ir.ui.menu">
-            <field name="groups_id" eval="[(4, ref('group_payroll_stack_oca'))]"/>
+        <!-- Extend EE hr_payroll (stub) top-level menus: require the EE
+             stack marker. The stub exposes 9 parent-less roots. -->
+        <record id="hr_payroll.menu_hr_payroll_global_settings" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_headcount_action" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_dashboard_root" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_employees" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_time_offs" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_payslips" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_report" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_salary_configuration" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
+        </record>
+        <record id="hr_payroll.menu_hr_payroll_dashboard_configuration" model="ir.ui.menu">
+            <field name="groups_id" eval="[(4, ref('group_payroll_stack_ee'))]"/>
         </record>
 
         <!-- Extend BA payroll top-level menu: require group_payroll_stack_ba. -->

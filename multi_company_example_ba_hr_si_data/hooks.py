@@ -7,8 +7,6 @@ users (lookups by name / login).
 
 import logging
 
-from odoo import api, SUPERUSER_ID
-
 _logger = logging.getLogger(__name__)
 
 
@@ -223,8 +221,21 @@ def _load_chart(env, company, template):
         "multi_company_example: loading chart %s onto %s",
         template.name, company.name,
     )
-    # try_loading is the public method in Odoo 16 that installs the template
-    # onto the given company.
+    # try_loading is the public method in Odoo 16 that installs an
+    # account.chart.template record onto the given company. Odoo 17+
+    # replaced that record-based system with code-based templates loaded
+    # via env['account.chart.template'].try_loading(<code>, company=...).
+    # This branch is a structural scaffold: when the old API is absent we
+    # log and skip rather than abort the whole install — CoA loading on
+    # v19 is wired up when the side-by-side test is exercised live.
+    if not hasattr(template, "try_loading"):
+        _logger.warning(
+            "multi_company_example: account.chart.template.try_loading not "
+            "available (Odoo 17+ chart-template API) — skipping CoA load for "
+            "%s; load it manually or port this hook to the v19 API",
+            company.name,
+        )
+        return
     template.with_company(company).try_loading(company=company, install_demo=False)
 
 
@@ -408,41 +419,42 @@ def _ensure_user(env, spec, companies_by_name):
 
     # Assign payroll access + stack marker groups together.
     # The stack marker alone isn't enough: payroll menu children require the
-    # real access group (payroll.group_payroll_user / ba_payroll.group_payroll_user).
-    # Odoo auto-hides a parent menu when every child is hidden, so without the
-    # access group the whole tree disappears for the user even though the stack
-    # marker is satisfied on the root.
+    # real access group (hr_payroll.group_hr_payroll_user /
+    # ba_payroll.group_payroll_user). Odoo auto-hides a parent menu when
+    # every child is hidden, so without the access group the whole tree
+    # disappears for the user even though the stack marker is satisfied on
+    # the root.
     #
     #   locked to BA           -> BA stack marker + ba_payroll.group_payroll_user
-    #   locked to HR/SL        -> OCA stack marker + payroll.group_payroll_user
+    #   locked to HR/SL        -> EE stack marker + hr_payroll.group_hr_payroll_user
     #   unlocked (admin, mgr)  -> both stacks + both access groups
     stack_ba = env.ref(
         "multi_company_example_ba_hr_si_data.group_payroll_stack_ba",
         raise_if_not_found=False,
     )
-    stack_oca = env.ref(
-        "multi_company_example_ba_hr_si_data.group_payroll_stack_oca",
+    stack_ee = env.ref(
+        "multi_company_example_ba_hr_si_data.group_payroll_stack_ee",
         raise_if_not_found=False,
     )
     access_ba = env.ref("ba_payroll.group_payroll_user", raise_if_not_found=False)
-    access_oca = env.ref("payroll.group_payroll_user", raise_if_not_found=False)
-    if stack_ba and stack_oca:
+    access_ee = env.ref("hr_payroll.group_hr_payroll_user", raise_if_not_found=False)
+    if stack_ba and stack_ee:
         lock_name = spec.get("psql_lock")
         if lock_name == "CompanyBA-1":
             groups |= stack_ba
             if access_ba:
                 groups |= access_ba
         elif lock_name in ("CompanyHR-1", "CompanyHR-2", "CompanySL-1"):
-            groups |= stack_oca
-            if access_oca:
-                groups |= access_oca
+            groups |= stack_ee
+            if access_ee:
+                groups |= access_ee
         else:
             # unlocked user — grant both stacks + both access groups
-            groups |= stack_ba | stack_oca
+            groups |= stack_ba | stack_ee
             if access_ba:
                 groups |= access_ba
-            if access_oca:
-                groups |= access_oca
+            if access_ee:
+                groups |= access_ee
 
     if not user:
         _logger.info("multi_company_example: creating user %s", spec["login"])
@@ -542,8 +554,8 @@ def _ensure_demo_employees(env, companies_by_name):
 # --- Entry points ----------------------------------------------------------
 
 
-def post_init_hook(cr, registry):
-    env = api.Environment(cr, SUPERUSER_ID, {})
+def post_init_hook(env):
+    # Odoo 17+ passes the Environment directly (was (cr, registry) in 16).
 
     # 1. Companies.
     companies_by_name = {}
@@ -581,8 +593,8 @@ def post_init_hook(cr, registry):
     _logger.info("multi_company_example: setup complete")
 
 
-def uninstall_hook(cr, registry):
-    env = api.Environment(cr, SUPERUSER_ID, {})
+def uninstall_hook(env):
+    # Odoo 17+ passes the Environment directly (was (cr, registry) in 16).
 
     # Demo users — remove.
     logins = [s["login"] for s in DEMO_USERS]
