@@ -1,0 +1,32 @@
+# Auto-build + publish this addon's wheel(s) to the Forgejo PyPI registry when a
+# pushed commit message contains [publish]. Branch name = Odoo series. Org routing
+# (public oss-vendors / private bringout) + pyproject-from-manifest are handled by
+# core_0/scripts/publish_addon_wheels.py. Needs a `native` runner + the org/repo
+# secret PYPI_PUBLISH_TOKEN. Managed by core_0/scripts/rollout_publish_workflow.py.
+name: publish-wheel
+on:
+  push:
+    branches: ["16.0", "17.0", "18.0", "19.0"]
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish]')
+    runs-on: native
+    steps:
+      - name: checkout addon repo
+        uses: actions/checkout@v4
+      - name: checkout core_0
+        uses: actions/checkout@v4
+        with:
+          repository: bringout/core_0
+          path: .core_0
+          token: ${{ secrets.PYPI_PUBLISH_TOKEN }}
+      - name: build + publish wheel(s)
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_PUBLISH_TOKEN }}
+          ODOO_SERIES: ${{ github.ref_name }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/venv && . /tmp/venv/bin/activate
+          pip install -q build twine
+          python3 .core_0/scripts/publish_addon_wheels.py --repo-dir . --repo-name "$REPO"
